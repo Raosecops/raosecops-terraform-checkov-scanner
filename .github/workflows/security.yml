@@ -1,0 +1,32 @@
+name: raosecops-security-pipeline
+
+# Trigger this workflow whenever code is pushed to GitHub
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  checkov-scan:
+    name: Run Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Download our repository code onto GitHub's runner
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python so we can install Checkov
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3: Install Checkov inside the GitHub runner environment
+      - name: Install Checkov
+        run: pip install checkov
+
+      # Step 4: Run Checkov against our Terraform configuration
+      - name: Run Checkov Security Scan
+        run: checkov -d .
