@@ -21,17 +21,53 @@ resource "aws_default_security_group" "default" {
   egress  = []
 }
 
-# KMS Key for CloudWatch Log Group Encryption (CKV_AWS_158)
+# KMS Key for CloudWatch Log Group Encryption
 resource "aws_kms_key" "logs_key" {
   description             = "KMS key for VPC flow logs encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
 }
 
+# Remediated: Explicit KMS Key Policy (CKV2_AWS_64)
+resource "aws_kms_key_policy" "logs_key_policy" {
+  key_id = aws_kms_key.logs_key.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow CloudWatch Logs to use the key"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.us-east-1.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt*",
+          "kms:Decrypt*",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:Describe*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+data "aws_caller_identity" "current" {}
+
 resource "aws_cloudwatch_log_group" "flow_log_group" {
   name              = "/aws/vpc/raosecops-flow-logs"
-  retention_in_days = 365 # Remediated: 1 year retention (CKV_AWS_338)
-  kms_key_id        = aws_kms_key.logs_key.arn # Remediated: KMS encryption (CKV_AWS_158)
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.logs_key.arn
 }
 
 resource "aws_flow_log" "raosecops_flow_log" {
@@ -73,7 +109,7 @@ resource "aws_iam_role_policy" "flow_log_policy" {
           "logs:DescribeLogStreams"
         ]
         Effect   = "Allow"
-        Resource = "${aws_cloudwatch_log_group.flow_log_group.arn}:*" # Remediated: Scoped down resource (CKV_AWS_290, CKV_AWS_355)
+        Resource = "${aws_cloudwatch_log_group.flow_log_group.arn}:*"
       }
     ]
   })
