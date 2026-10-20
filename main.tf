@@ -14,7 +14,6 @@ resource "aws_vpc" "raosecops_vpc_core" {
   }
 }
 
-# 1. Remediated: Explicitly set default VPC security group to restrict all traffic (CKV2_AWS_12)
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.raosecops_vpc_core.id
 
@@ -22,17 +21,24 @@ resource "aws_default_security_group" "default" {
   egress  = []
 }
 
-# 2. Remediated: Enabled VPC flow logs (CKV2_AWS_11)
+# KMS Key for CloudWatch Log Group Encryption (CKV_AWS_158)
+resource "aws_kms_key" "logs_key" {
+  description             = "KMS key for VPC flow logs encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
+resource "aws_cloudwatch_log_group" "flow_log_group" {
+  name              = "/aws/vpc/raosecops-flow-logs"
+  retention_in_days = 365 # Remediated: 1 year retention (CKV_AWS_338)
+  kms_key_id        = aws_kms_key.logs_key.arn # Remediated: KMS encryption (CKV_AWS_158)
+}
+
 resource "aws_flow_log" "raosecops_flow_log" {
   vpc_id          = aws_vpc.raosecops_vpc_core.id
   traffic_type    = "ALL"
   iam_role_arn    = aws_iam_role.flow_log_role.arn
   log_destination = aws_cloudwatch_log_group.flow_log_group.arn
-}
-
-resource "aws_cloudwatch_log_group" "flow_log_group" {
-  name              = "/aws/vpc/raosecops-flow-logs"
-  retention_in_days = 7
 }
 
 resource "aws_iam_role" "flow_log_role" {
@@ -67,13 +73,12 @@ resource "aws_iam_role_policy" "flow_log_policy" {
           "logs:DescribeLogStreams"
         ]
         Effect   = "Allow"
-        Resource = "*"
+        Resource = "${aws_cloudwatch_log_group.flow_log_group.arn}:*" # Remediated: Scoped down resource (CKV_AWS_290, CKV_AWS_355)
       }
     ]
   })
 }
 
-# 3. Remediated: Set map_public_ip_on_launch to false (CKV_AWS_130)
 resource "aws_subnet" "raosecops_subnet_public" {
   vpc_id                  = aws_vpc.raosecops_vpc_core.id
   cidr_block              = "10.0.1.0/24"
@@ -86,7 +91,6 @@ resource "aws_subnet" "raosecops_subnet_public" {
   }
 }
 
-# 4 & 5. Remediated: Restricted SSH CIDR to a safe private range and attached it to an EC2 network interface (CKV_AWS_24, CKV2_AWS_5)
 resource "aws_security_group" "raosecops_sg_secure" {
   name        = "raosecops-sg-secure"
   description = "Security group with restricted SSH access"
